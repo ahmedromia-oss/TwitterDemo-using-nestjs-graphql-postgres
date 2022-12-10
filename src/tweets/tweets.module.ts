@@ -16,7 +16,7 @@ import { TweetService } from './tweets.services';
   forwardRef(() => UsersModule),
   JwtModule.register({
     secret: 'secretKey',
-    signOptions: { expiresIn: '60s' },
+    signOptions: { expiresIn: '10h' },
   })
   
 
