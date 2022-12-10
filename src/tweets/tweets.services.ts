@@ -1,5 +1,6 @@
-import { forwardRef, Inject, Injectable } from "@nestjs/common";
+import { forwardRef, Inject, Injectable, NotAcceptableException } from "@nestjs/common";
 import { InjectRepository } from "@nestjs/typeorm";
+import { GraphQLError } from "graphql";
 import { User } from "src/users/users.entity";
 
 import { UsersService } from "src/users/users.service";
@@ -18,32 +19,50 @@ export class TweetService {
     ){
 
     }
-    findAll(){
+    Tweets(){
         return this.TweetRepistory.find({relations:{
-            user:true
+            user:true,
+            likes:true,
+            
         }})
     }
-    findByOne(id:number){ 
+    async FindOneTweet(id:number):Promise<tweetEntity>{ 
         
-        return this.TweetRepistory.findOne({
+        const tweet =  await this.TweetRepistory.findOne({
             relations:{
-                user:true
+                
+                user:true,
+                likes:true,
+                
             },
             where:{id:id}
         })
+        if(tweet == null){
+            throw new GraphQLError("No Such Tweet", {
+                extensions: { code: 'NOT FOUND'},
+              });
+            
+        }
+        else{
+            return tweet
+        }
     }
-    async addTweet(TweetInput:TweetInput){
-    var user =await this.UserService.findByOne(TweetInput.userId)
+    async addTweet(TweetInput:TweetInput , UserId:number){
+    var user =await this.UserService.Profile(UserId)
     
     await this.TweetRepistory.save(this.TweetRepistory.create({content:TweetInput.content , user:user}))
         
         
     }
-    async removeTweet(id:number){
-    
-    this.TweetRepistory.delete(id) 
-        
-    
-        
+    async removeTweet(id:number , UserId:number){
+    const user = this.UserService.Profile(UserId)
+    if((await (await user).tweets).find(tweet=>tweet.id == id) != null)
+    {
+        this.TweetRepistory.delete(id) 
+        return "Removed"
+    }
+    else{
+        return "UnAuthorized"
+    }        
     }
 }

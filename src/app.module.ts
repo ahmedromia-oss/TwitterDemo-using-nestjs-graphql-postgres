@@ -8,15 +8,25 @@ import { tweetEntity } from './tweets/tweet.entity';
 
 import { UsersModule } from './users/users.module';
 import { User } from './users/users.entity';
+
+import { JwtModule } from '@nestjs/jwt';
 @Module({
+  providers:[],
   imports: [GraphQLModule.forRoot<ApolloDriverConfig>(
     {
       
       driver:ApolloDriver,
       autoSchemaFile: true,
-      sortSchema:true
+      sortSchema:true,
+      
     }
+
   ),
+  JwtModule.register({
+    secret: 'secretKey',
+    signOptions: { expiresIn: '60s' },
+  }),
+
   TweetsModule,
   TypeOrmModule.forRoot({
     type: 'postgres',
@@ -28,6 +38,7 @@ import { User } from './users/users.entity';
     entities:[tweetEntity , User],
     autoLoadEntities:true,
     synchronize: true,
+    
   }),
   UsersModule,
 ],
