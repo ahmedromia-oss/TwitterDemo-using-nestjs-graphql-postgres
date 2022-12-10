@@ -37,7 +37,7 @@ export class UsersResolver {
     }
     @UseGuards(AuthGuard)
     @Query(() => User)
-    async Profile(@CurrentUser() user, @Args({name:'id', type:()=>Int }) id:number){
+    async Profile(@CurrentUser() user){
         
         return this.UserService.Profile(user.sub);
     }
