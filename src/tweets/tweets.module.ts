@@ -1,10 +1,10 @@
 import { forwardRef, Module } from '@nestjs/common';
-import { JwtModule } from '@nestjs/jwt';
-import { TypeOrmModule } from '@nestjs/typeorm';
-import { AuthGuard } from 'src/users/guards/auth.guard';
+import { SequelizeModule } from '@nestjs/sequelize';
+import { AuthModule } from 'src/auth/auth.module';
+
+import { UserLikes } from 'src/Models/UserLikes.Model';
 import { UsersModule } from 'src/users/users.module';
-import { UsersService } from 'src/users/users.service';
-import { tweetEntity } from './tweet.entity';
+import { tweetEntity } from '../Models/tweet.entity';
 import { TweetsResolver } from './tweets.resolver';
 import { TweetService } from './tweets.services';
 
@@ -12,14 +12,9 @@ import { TweetService } from './tweets.services';
 
 @Module({
   providers: [TweetsResolver , TweetService],
-  imports:[TypeOrmModule.forFeature([ tweetEntity ]),
+  imports:[SequelizeModule.forFeature([ tweetEntity  , UserLikes]),
   forwardRef(() => UsersModule),
-  JwtModule.register({
-    secret: 'secretKey',
-    signOptions: { expiresIn: '10h' },
-  })
-  
-
+  forwardRef(() => AuthModule),
 ],
 exports:[TweetService]
   

@@ -1,78 +1,104 @@
-import { UseGuards, UsePipes, ValidationPipe } from '@nestjs/common';
+import {UseGuards, UseInterceptors, UsePipes, ValidationPipe } from '@nestjs/common';
 import { Query ,Args, Resolver, Mutation, Int } from '@nestjs/graphql';
-
-// @ts-ignore
-// import FileUpload from 'graphql-upload/Upload.js';
-import { CurrentUser } from './decerators/currentUser.decerator';
-import { AuthGuard } from './guards/auth.guard';
-import { User, UserInput } from './users.entity';
+import { CurrentUser } from '../Decorators/currentUser.decorator';
+import { AuthGuard } from '../auth/auth.guard';
+import { User} from '../Models/users.entity';
 import { UsersService } from './users.service';
-import { createWriteStream } from 'fs';
-import { UserLoginDTO } from './DTOs/UserLogin.DTO';
-// import { GraphQLUpload } from "graphql-upload/GraphQLUpload.js";
-// import { FileUpload } from "graphql-upload/Upload.js";
+import { UserLoginDTO } from '../DTOs/User/UserLogin.DTO';
+
+
+import { UserInput } from 'src/DTOs/User/UserRegisterDto';
+import { TransactionInterceptor } from 'src/Interceptors/Transaction.Interceptor';
+import { Transaction } from 'sequelize';
+import { TransactionParam } from 'src/Decorators/TransactionParam.decorator';
+
+import GraphQLUpload = require('graphql-upload/GraphQLUpload.js');
+import FileUpload = require('graphql-upload/GraphQLUpload.js');
+import { ResponseInterceptor } from 'src/Interceptors/ResponseInterceptor';
+import {  MutationResponse, UserResponse } from 'src/Models/Response.Model';
+
+
+
+
 
 
 @Resolver(of=>(User))
+
 export class UsersResolver {
     constructor(private readonly UserService:UsersService){}
     
+    @UseInterceptors(TransactionInterceptor)
     @UsePipes(ValidationPipe)
-    @Mutation(()=>String)
-    AddUser(@Args('data') input: UserInput){
-        
-        return this.UserService.SignIn(input)
-        
-    
+    @Mutation(()=>MutationResponse)
 
+    SignIn(@TransactionParam() transaction: Transaction, @Args('data') input: UserInput){
+        
+        return this.UserService.SignIn(input , transaction)
     }
     @UsePipes(ValidationPipe)
-    @Mutation(()=>String)
-    async SignIn(@Args('data') user: UserLoginDTO){
+    @Mutation(()=>MutationResponse)
+    async Login(@Args('data') user: UserLoginDTO){
         var token =await this.UserService.login(await this.UserService.Validate( user.Email, user.password))
-        return token
+        if(token == "Bad Login Attempt"){
+            return new MutationResponse(400 , token)
+
+        }
+        else{
+            return new MutationResponse(200 , token)
+
+        }
         
     
 
     }
+    @UseInterceptors(ResponseInterceptor<User>)
     @UseGuards(AuthGuard)
-    @Query(() => User)
+    @Query(() => UserResponse<User>)
+
     async Profile(@CurrentUser() user){
         
         return this.UserService.Profile(user.sub);
     }
-
-    // @Mutation(() => Boolean)
-    // async uploadFile(@Args({name: 'file', type: () => GraphQLUpload})
-    // {
-    //     createReadStream,
-    //     filename
-    // }: FileUpload): Promise<boolean> {
-    //     return new Promise(async (resolve, reject) => 
-    //         createReadStream()
-    //             .pipe(createWriteStream(`./uploads/${filename}`))
-    //             .on('finish', () => resolve(true))
-    //             .on('error', () => reject(false))
-    //     );
-    // }
-
-
-
+    @UseInterceptors(TransactionInterceptor)
     @UseGuards(AuthGuard)
-    @Mutation( ()=>String)
-    async addOrRemoveLike(@CurrentUser() user, @Args({name:'PostId', type:()=>Int})PostId:number){
+    @Mutation(()=>MutationResponse , {name:"follow"})
+    @UseInterceptors(ResponseInterceptor<String>)
+    async addOrRemoveFollow(@TransactionParam() transaction:Transaction ,@CurrentUser() user, @Args({name:'followingId', type:()=>String})followingId:string){
        
-        return this.UserService.addOrRemoveLike(PostId , user.sub)
-
-         
-
+        return await this.UserService.addOrRemoveFollow(user.sub , followingId , transaction)
     }
+    @UseInterceptors(ResponseInterceptor)
+    @UseInterceptors(TransactionInterceptor)
+    
     @UseGuards(AuthGuard)
-    @Mutation(()=>String)
-    async AddOrRemoveFollw(@CurrentUser() user, @Args({name:'followingId', type:()=>Int}) followingId:number){
+    @Mutation(() => MutationResponse)
+    async uploadProfilePhoto(
+      @TransactionParam() transaction:Transaction ,@CurrentUser() user, @Args({name: 'file', type: () => GraphQLUpload}) {createReadStream , filename , mimetype}: FileUpload): Promise<String> {
+        const result = await this.UserService.UpdateProfilePhoto({createReadStream , filename , mimetype} , user.sub , transaction)
         
-       return this.UserService.addOrRemoveFollow(user.sub , followingId)
+        if(result){
+            return "Created"
+        }
+        else{
+            return "Bad Request"
+        }
        
-
+        
+    }
+    @UseInterceptors(ResponseInterceptor)
+    @UseInterceptors(TransactionInterceptor)
+    @UseGuards(AuthGuard)
+    @Mutation(() => MutationResponse)
+    async uploadCoverPhoto(@TransactionParam() transaction:Transaction ,@CurrentUser() user, @Args({name: 'file', type: () => GraphQLUpload}){createReadStream,filename , mimetype}: FileUpload): Promise<String> {
+     
+        const result =  await this.UserService.UpdateCoverPhoto({createReadStream , filename , mimetype} , user.sub , transaction)
+        if(result){
+            return "Created"
+        }
+        else{
+            return "Bad Request"
+        }
+       
+        
     }
 }

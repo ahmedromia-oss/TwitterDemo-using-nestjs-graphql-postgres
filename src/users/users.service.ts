@@ -1,152 +1,185 @@
-import { ExecutionContext,forwardRef, Inject, Injectable, NotAcceptableException, Scope, UsePipes, ValidationPipe } from '@nestjs/common';
-import { InjectRepository } from '@nestjs/typeorm';
-import { tweetEntity } from 'src/tweets/tweet.entity';
-import { TweetsResolver } from 'src/tweets/tweets.resolver';
-import { Repository } from 'typeorm';
-import { User, UserInput } from './users.entity';
+import { forwardRef, Inject, Injectable } from '@nestjs/common';
+import { tweetEntity } from 'src/Models/tweet.entity';
+import { User} from '../Models/users.entity';
 import * as bcrypt from 'bcrypt';
 import { TweetService } from 'src/tweets/tweets.services';
-import { JwtService } from '@nestjs/jwt';
+import { AuthService } from 'src/auth/auth.service';
+import { InjectModel } from '@nestjs/sequelize';
+import { FollowerFollowing } from 'src/Models/FollowerFollowing.Model';
+import { UserInput } from 'src/DTOs/User/UserRegisterDto';
+import { Transaction, where } from 'sequelize';
 
+import FileUpload = require('graphql-upload/GraphQLUpload.js');
+import { createWriteStream } from 'fs';
+import { MutationResponse } from 'src/Models/Response.Model';
+const crypto = require('crypto');
 
 @Injectable()
 export class UsersService {
     constructor(
-        @InjectRepository(User) private readonly UserRepository:Repository<User>,
+        @InjectModel(FollowerFollowing)
+        private followerfollowing: typeof FollowerFollowing,
+        @InjectModel(User)
+        private UserRepository: typeof User,
+        @Inject(forwardRef(() => AuthService))
+        private readonly authService:AuthService,
         @Inject(forwardRef(() => TweetService))
-      
-
         private readonly tweetservice:TweetService,
-        private jwtService: JwtService
-    ){} 
-    async Validate(Email:string ,password:string ){
-        const user = await this.UserRepository.findOne({where:{Email:Email}})
         
-    
-       
-        if (!user) return null;
-        const passwordValid = await bcrypt.compare(password, user.PassWord)
-        if (!user) {
-            throw new NotAcceptableException('could not find the user');
+    ){}
+    getUUID = () =>
+    (String(1e7) + -1e3 + -4e3 + -8e3 + -1e11).replace(/[018]/g, (c) =>
+    (Number(c) ^ (crypto.randomBytes(1)[0] & (15 >> (Number(c) / 4)))).toString(16),
+);
+
+
+    async UpdateProfilePhoto({createReadStream,filename , mimetype}: FileUpload , userId:string , transaction:Transaction):Promise<boolean>{
+        
+        filename = this.getUUID()+filename
+        const result =  new Promise<boolean>(async (resolve) =>{
+        if(mimetype.split("/")[1] != "png" && mimetype.split("/")[1] != "jpeg" && mimetype.split("/")[1] != "jpg" ){
+            filename = "/"
+        } 
+        return createReadStream()
+            .pipe(createWriteStream("./uploads/" + filename))
+            .on('finish', () => resolve(true))
+            .on('error', () => resolve(false))
+    }
+    );      
+    if(result){
+        this.UserRepository.update({ProfilePhoto:filename} , {where:{id:userId} , transaction:transaction})
+        return result
+    }
+    return result
+    }
+
+    async UpdateCoverPhoto({createReadStream,filename , mimetype}: FileUpload , userId:string , transaction:Transaction):Promise<boolean>{
+        filename = this.getUUID()+filename
+        const result =  new Promise<boolean>(async (resolve) =>{ 
+        if(mimetype.split("/")[1] != "png" && mimetype.split("/")[1] != "jpeg" && mimetype.split("/")[1] != "jpg" ){
+            filename = "/"
+        } 
+        return createReadStream()
+            .pipe(createWriteStream("./uploads/"+ filename))
+            .on('finish', () => resolve(true))
+            .on('error', () => resolve(false))
         }
-        if (user && passwordValid) {
-            return user;
-        }
-        return null;
+    );      
+    if(result){
+        this.UserRepository.update({CoverPhoto:filename} , {where:{id:userId} , transaction:transaction})
+        return result
+    }
+    return result
+    }
+    async FindOneUser(Email:string):Promise<User>{
+        const user = await this.UserRepository.findOne({where:{Email:Email}})
+        return user
+    }
+    async Validate(Email:string ,password:string ){
+        return this.authService.Validate(Email , password)
     }
     async login(user: User) {
-        console.log(user)
-        if(user == null){
-            return "Bad Login Attempt"
-        }
-        const payload = { username: user.UserName, sub: user.id };
-        return this.jwtService.sign(payload)
+        return this.authService.login(user)
         
     }
-    async SignIn(UserInput:UserInput){
+    async SignIn(UserInput:UserInput , transaction: Transaction){
         const username = await this.UserRepository.findOne({where:{UserName:UserInput.UserName}})
         const Email = await this.UserRepository.findOne({where:{Email:UserInput.Email}})
         
 
         if(Email != null){
-            return "Email must be unique"
+            return new MutationResponse(400 , "Email Must be Unique")
         }
         if(username != null) {
-            return "UserName must be unique"
+            return new MutationResponse(400 , "UserName Must be Unique")
         }
         else{
+            const hashedPassWord = await bcrypt.hash(UserInput.password , 12) 
+            const user = await this.UserRepository.create({UserName:UserInput.UserName , Email:UserInput.Email , PassWord:hashedPassWord} , {transaction:transaction})
 
-        
-        const hashedPassWord = await bcrypt.hash(UserInput.password , 12) 
-
-        const user = await this.UserRepository.save(this.UserRepository.create({UserName:UserInput.UserName , Email:UserInput.Email , PassWord:hashedPassWord}))
-        user.PassWord = hashedPassWord
-        return "User Created Succefully"
+            user.PassWord = hashedPassWord
+            
         }
+        return new MutationResponse(200 , "Signed In Successfully")
     }
-    async Profile(id:number){
+    async Profile(id:string){
+
         
-        return await this.UserRepository.findOne({
-            relations:{
-                tweets:true,
-                LikedPosts:true,
-                follower:true, 
-                following:true
+        var result = await this.UserRepository.findOne({
+            include:[{
+                model:tweetEntity,
+                as:"tweets",
             },
-            where:{id:id}
-        })
-    }
-    async addOrRemoveLike(PostId:number , UserId:number){
-        
-        
-        var user = await this.UserRepository.findOne({where:{id:UserId} , relations:{
-            tweets:true,
-            LikedPosts:true
-        }})
-        var Post = await this.tweetservice.FindOneTweet(PostId)
-        var UserPost =  (await user.LikedPosts).find(post=>post.id == Post.id)
-        if(Post == null){
-            return "Post Not Found"
-        }
-        else{
-
-        
-        if(UserPost == undefined){
-            ;(await user.LikedPosts).push(Post)
-        await this.UserRepository.save(user)
-        return "Like Added"
-        }
-        else{
-            (await user.LikedPosts).splice((await user.LikedPosts).indexOf(UserPost))
-        this.UserRepository.save(user)
-        return "Like Removed"
-        }
-
-        }
-        
-    }
-    async addOrRemoveFollow(followerId:number , followingId:number){
-        
-        if(followerId == followingId){
-            return "You can't Follow Youself bro!"
-        }
-        else{
-            var follower = await this.UserRepository.findOne({where:{id:followerId} , relations:{
-                follower:true,
-                following:true
-            }})
-            var following = await this.UserRepository.findOne({where:{id:followingId} ,
-                relations:{
-                    following:true,
-                    follower:true
-                } 
-            })
-            if(following == null){
-                return "User Is Not Found"
+            {
+                model:tweetEntity,
+                as:"LikedPosts"
+            },
+            {
+                model:User,
+                as:"followings"
+            },
+            {
+                model:User,
+                as:"followers"
             }
+        ],
     
-           else{
+            where:{id:id}
+        }
+        )
+       return result
+    }
+    
+    async addOrRemoveFollow(followerId:string , followingId:string , transaction:Transaction){
+        var user:User
+        try{
+            user = await this.UserRepository.findOne(
+                {where:{id:followingId}}
+            )
+            
+        }
+        catch{
+            return "Bad Request"
+        }
+        
+        
+        if(followerId == followingId || user == null){
+            
+            return "Bad Request"
+            
+        }
+        
+        else{
+            const result = await this.followerfollowing.findOne({where:{followingId:followingId , followerId:followerId}})
+            
+            if(result == null){
+                await this.followerfollowing.create({followerId:followerId , followingId:followingId} , {transaction:transaction})
+                const follower = this.UserRepository.findByPk(followerId)
+                const following =  this.UserRepository.findByPk(followingId)
+                await this.UserRepository.update({followersNumber:(await follower).followingNumber+1} , {where:{id:followingId} , transaction:transaction})
+                await this.UserRepository.update({followingNumber:(await following).followersNumber+1} , {where:{id:followerId} , transaction:transaction})
 
-           
-            var SearchFollowing = follower.following.find(Following=>Following.id == following.id)
-            if(SearchFollowing == null){
-                following.follower.push(follower) 
-                this.UserRepository.save(follower)
-                this.UserRepository.save(following)
-                return "Follow Added"
+              
+            
+
+
+                
+
+                return "follow added"
             }
             else{
-            following.follower.splice(following.follower.indexOf(SearchFollowing))
-            this.UserRepository.save(follower)
-            this.UserRepository.save(following)
-            return "Follow Removed"
+                await this.followerfollowing.destroy({where:{followerId:followerId , followingId:followingId} , transaction:transaction})
+                const follower = this.UserRepository.findByPk(followerId)
+                const following =  this.UserRepository.findByPk(followingId)
+                await this.UserRepository.update({followersNumber:(await follower).followingNumber-1} , {where:{id:followingId} , transaction:transaction})
+                await this.UserRepository.update({followingNumber:(await following).followersNumber-1} , {where:{id:followerId} , transaction:transaction})
+                
+
+                
+                return "follow removed"
             }
         }
-        }
-        
-        
-
-    }
+}
     
     
 }

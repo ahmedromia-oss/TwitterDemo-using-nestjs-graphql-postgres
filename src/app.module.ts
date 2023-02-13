@@ -1,20 +1,34 @@
 import { Module } from '@nestjs/common';
 import { GraphQLModule } from '@nestjs/graphql';
-import { ApolloDriver, ApolloDriverConfig } from '@nestjs/apollo';
-import { join } from 'path';
+import { ApolloDriver } from '@nestjs/apollo';
 import { TweetsModule } from './tweets/tweets.module';
-import { TypeOrmModule } from '@nestjs/typeorm';
-import { tweetEntity } from './tweets/tweet.entity';
 
 import { UsersModule } from './users/users.module';
-import { User } from './users/users.entity';
 
-import { JwtModule } from '@nestjs/jwt';
+import { AuthModule } from './auth/auth.module';
+import { SequelizeModule } from '@nestjs/sequelize';
+import {  generateUserDataLoader } from './loaders/UserDataLoader';
+
+
 @Module({
-  providers:[],
-  imports: [GraphQLModule.forRoot<ApolloDriverConfig>(
+  
+  providers:[ 
+    
+
+    
+
+   ],
+   
+  imports: [GraphQLModule.forRoot(
     {
+      uploads: false,
+
+      context: () => ({
+       
+        Userloader:generateUserDataLoader()
+        
       
+      }),
       driver:ApolloDriver,
       autoSchemaFile: true,
       sortSchema:true,
@@ -22,27 +36,25 @@ import { JwtModule } from '@nestjs/jwt';
     }
 
   ),
-  JwtModule.register({
-    secret: 'secretKey',
-    signOptions: { expiresIn: '60s' },
-  }),
+ 
 
   TweetsModule,
-  TypeOrmModule.forRoot({
-    type: 'postgres',
+  UsersModule,
+  AuthModule,
+  
+  SequelizeModule.forRoot({
+    dialect: 'postgres',
     host: '127.0.0.1',
     port: 5432,
     username: 'postgres',
     password: 'root123',
     database: 'twitterDemo',
-    entities:[tweetEntity , User],
-    autoLoadEntities:true,
-    synchronize: true,
-    
+    autoLoadModels: true,
+    synchronize: true
   }),
-  UsersModule,
 ],
  
-  
 })
-export class AppModule {}
+export class AppModule {
+  
+}

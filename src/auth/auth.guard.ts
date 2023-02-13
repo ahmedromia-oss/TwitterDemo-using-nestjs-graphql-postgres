@@ -1,14 +1,13 @@
 import { CanActivate, ExecutionContext, Injectable } from '@nestjs/common';
 import { GqlExecutionContext } from '@nestjs/graphql';
 import { JwtService } from '@nestjs/jwt';
-import { kMaxLength } from 'buffer';
 import { IncomingMessage } from 'http';
 
 @Injectable()
 export class AuthGuard implements CanActivate {
 constructor(private readonly jwtService:JwtService){}
 canActivate(context: ExecutionContext): boolean {
-    // context.switchToHttp().getRequest();
+    
     const ctx = GqlExecutionContext.create(context)
     const request:IncomingMessage & { user?: Record<string, unknown> } = ctx.getContext().req
    
